@@ -1,0 +1,94 @@
+name: Deploy to Baota Panel
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: main
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install pnpm
+      run: |
+        npm install -g pnpm
+
+    - name: Install dependencies
+      run: |
+        pnpm install --production
+
+    - name: Build project
+      run: |
+        pnpm build
+
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          # 进入项目目录
+          cd /www/wwwroot/chadao
+          
+          # 备份当前版本
+          if [ -d ".next" ]; then
+            BACKUP_DIR="/backup/chadao_$(date +%Y%m%d_%H%M%S)"
+            mkdir -p $BACKUP_DIR
+            cp -r .next $BACKUP_DIR/
+            echo "备份完成: $BACKUP_DIR"
+          fi
+          
+          # 拉取最新代码
+          git fetch origin
+          git reset --hard origin/main
+          git clean -fd
+          
+          # 安装依赖
+          pnpm install --production
+          
+          # 构建项目
+          pnpm build
+          
+          # 设置权限
+          chown -R www:www .
+          chmod -R 755 .
+          
+          # 重启PM2
+          if command -v pm2 &> /dev/null; then
+            if pm2 list | grep -q "chadao"; then
+              pm2 restart chadao
+            else
+              pm2 start ecosystem.config.js
+            fi
+            pm2 save
+          fi
+          
+          # 重载Nginx
+          if command -v nginx &> /dev/null; then
+            nginx -t && nginx -s reload
+          fi
+          
+          echo "🎉 部署完成！"
+
+    - name: Notify deployment
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ 部署成功！"
+          echo "🌐 访问地址: https://your-domain.com"
+        else
+          echo "❌ 部署失败，请检查日志"
+        fi
