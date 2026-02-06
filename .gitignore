@@ -10,3 +10,17 @@ node_modules/
 .next/
 .env*.local
 .DS_Store
+
+# Production ignores
+.env.production
+logs/
+*.log
+
+# IDE ignores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS ignores
+Thumbs.db
